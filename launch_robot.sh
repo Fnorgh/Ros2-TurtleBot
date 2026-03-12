@@ -59,8 +59,8 @@ cd \"$WS_DIR\"
 echo 'Sourcing install/setup.bash ...'
 source install/setup.bash 2>/dev/null || true
 echo ''
-echo 'Running robot-setup.sh – follow the printed instructions, then press Enter here.'
-robot-setup.sh
+echo 'Running robot-setup.sh ...'
+printf '%s\n' "${ROBOT_NAME}" | robot-setup.sh
 echo ''
 echo 'Building reactive_robot package ...'
 colcon build --packages-select reactive_robot
@@ -80,11 +80,11 @@ cd \"$WS_DIR\"
 echo 'Sourcing install/setup.bash ...'
 source install/setup.bash 2>/dev/null || true
 echo ''
-echo 'Running robot-setup.sh – follow the printed instructions, then press Enter here.'
-robot-setup.sh
+echo 'Running robot-setup.sh ...'
+printf '%s\n' "${ROBOT_NAME}" | robot-setup.sh
 echo ''
 echo 'Starting teleop_twist_keyboard (use conservative speeds: speed=0.1 turn=0.2) ...'
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true --remap /cmd_vel:=/teleop_cmd_vel
 "
 
 # ── Terminal 4: RViz Visualization ───────────────────────────────────────────
@@ -95,8 +95,8 @@ cd \"$WS_DIR\"
 echo 'Sourcing install/setup.bash ...'
 source install/setup.bash 2>/dev/null || true
 echo ''
-echo 'Running robot-setup.sh – follow the printed instructions, then press Enter here.'
-robot-setup.sh
+echo 'Running robot-setup.sh ...'
+printf '%s\n' "${ROBOT_NAME}" | robot-setup.sh
 echo ''
 echo 'Launching RViz2 (view_robot) ...'
 ros2 launch turtlebot4_viz view_robot.launch.py
