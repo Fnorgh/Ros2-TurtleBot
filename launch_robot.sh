@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# launch_robot.sh
+# Opens all terminals needed for Project 2 TurtleBot 4 operation.
+# Usage: ./launch_robot.sh
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_DIR="$SCRIPT_DIR/ros2_ws"
+
+# ── Prompt for robot name ────────────────────────────────────────────────────
+read -rp "Enter TurtleBot name (printed on the robot): " ROBOT_NAME
+if [[ -z "$ROBOT_NAME" ]]; then
+    echo "ERROR: Robot name cannot be empty." >&2
+    exit 1
+fi
+
+ROBOT_HOST="student@${ROBOT_NAME}.cs.nor.ou.edu"
+
+echo ""
+echo "Opening terminals for robot: $ROBOT_NAME"
+echo "Workspace: $WS_DIR"
+echo ""
+
+# ── Helper: open a gnome-terminal tab with a title and command ────────────────
+# Usage: open_tab "TITLE" "BASH_COMMANDS"
+open_tab() {
+    local title="$1"
+    local cmd="$2"
+    gnome-terminal \
+        --title="$title" \
+        -- bash -c "$cmd; exec bash" &
+    sleep 0.4   # small delay so windows open in a visible order
+}
+
+# ── Terminal 1: SSH into the Robot ───────────────────────────────────────────
+# Log in, verify /scan /tf /odom are published, start LiDAR motor.
+open_tab "TB4 – Robot SSH" "
+echo '=== TurtleBot 4 SSH Terminal ==='
+echo 'SSHing into ${ROBOT_HOST} ...'
+echo ''
+echo 'Once logged in:'
+echo '  1. Run:  ros2 topic list'
+echo '     Verify /scan, /tf, and /odom are present.'
+echo '  2. If they are missing run:  turtlebot4-daemon-restart'
+echo '     Then run ros2 topic list again.'
+echo '  3. Start LiDAR motor:'
+echo '     ros2 service call /start_motor std_srvs/srv/Empty \"{}\"'
+echo ''
+ssh ${ROBOT_HOST}
+"
+
+# ── Terminal 2: Build & Run reactive_controller ──────────────────────────────
+# Sources workspace, runs robot-setup.sh, builds the package, then launches.
+open_tab "TB4 – Reactive Controller" "
+echo '=== Reactive Controller Terminal ==='
+echo ''
+cd \"$WS_DIR\"
+echo 'Sourcing install/setup.bash ...'
+source install/setup.bash 2>/dev/null || true
+echo ''
+echo 'Running robot-setup.sh – follow the printed instructions, then press Enter here.'
+robot-setup.sh
+echo ''
+echo 'Building reactive_robot package ...'
+colcon build --packages-select reactive_robot
+echo ''
+echo 'Sourcing install/setup.bash after build ...'
+source install/setup.bash
+echo ''
+echo 'Launching reactive_controller ...'
+ros2 run reactive_robot reactive_controller
+"
+
+# ── Terminal 3: Keyboard Teleoperation ───────────────────────────────────────
+open_tab "TB4 – Teleop Keyboard" "
+echo '=== Keyboard Teleoperation Terminal ==='
+echo ''
+cd \"$WS_DIR\"
+echo 'Sourcing install/setup.bash ...'
+source install/setup.bash 2>/dev/null || true
+echo ''
+echo 'Running robot-setup.sh – follow the printed instructions, then press Enter here.'
+robot-setup.sh
+echo ''
+echo 'Starting teleop_twist_keyboard (use conservative speeds: speed=0.1 turn=0.2) ...'
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true
+"
+
+# ── Terminal 4: RViz Visualization ───────────────────────────────────────────
+open_tab "TB4 – RViz" "
+echo '=== RViz Visualization Terminal ==='
+echo ''
+cd \"$WS_DIR\"
+echo 'Sourcing install/setup.bash ...'
+source install/setup.bash 2>/dev/null || true
+echo ''
+echo 'Running robot-setup.sh – follow the printed instructions, then press Enter here.'
+robot-setup.sh
+echo ''
+echo 'Launching RViz2 (view_robot) ...'
+ros2 launch turtlebot4_viz view_robot.launch.py
+"
+
+echo ""
+echo "All terminals launched."
+echo ""
+echo "Order of operations:"
+echo "  1. Terminal 1 (SSH): verify /scan /tf /odom, start LiDAR motor"
+echo "  2. Terminal 2 (Reactive Controller): run robot-setup.sh, build, then run"
+echo "  3. Terminal 3 (Teleop): run robot-setup.sh, then drive with keyboard"
+echo "  4. Terminal 4 (RViz): run robot-setup.sh, then visualize"
