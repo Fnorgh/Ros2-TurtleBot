@@ -47,3 +47,9 @@ From desktop terminal, run `reactive_controller.py`:
 ```bash
 ros2 run reactive_robot reactive_controller
 ```
+
+## Turn off robot liDAR
+After finished using the robot, from robot SSH terminal, run:
+```bash
+ros2 service call /stop_motor std_srvs/srv/Empty "{}"
+```
