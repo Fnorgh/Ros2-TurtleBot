@@ -41,6 +41,7 @@ Make sure your terminal is set up with instructions above.
 From desktop terminal, build the project:
 ```bash
 colcon build --packages-select reactive_robot
+source install/setup.bash
 ```
 
 From desktop terminal, run `reactive_controller.py`:
