@@ -10,6 +10,7 @@ ROBOTS=(
     snapper
     hawksbill
     matamata
+    testudo
 )
 
 PASSWORD="student"
@@ -21,15 +22,24 @@ for ROBOT in "${ROBOTS[@]}"; do
     HOST="student@${ROBOT}.cs.nor.ou.edu"
     echo "[$ROBOT] Connecting to $HOST ..."
 
-    # bash --login sources the robot's profile so ros2 is on PATH.
-    # Command is a single-quoted argument — no heredoc, no stdin conflict with sshpass.
-    sshpass -p "$PASSWORD" \
-        ssh -o StrictHostKeyChecking=accept-new \
-            -o StrictHostKeyChecking=accept-new \
-            -o BatchMode=no \
-            -o ConnectTimeout=5 \
-            "$HOST" \
-            'bash --login -c "ros2 service call /stop_motor std_srvs/srv/Empty {}"'
+    # Single-quoted shell command inside Tcl braces so remote bash
+    # sees it correctly. ROS2 is sourced explicitly since the login
+    # profile on the robot does not set it up automatically.
+    expect -c "
+        set timeout 30
+        spawn ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -tt $HOST
+        expect {
+            \"yes/no\"    { send \"yes\r\";       exp_continue }
+            \"password:\" { send \"$PASSWORD\r\"; exp_continue }
+            \"\\\$\"      { }
+        }
+        send \"robot-setup.sh\r\"
+        expect \"\\\$\"
+        send \"ros2 service call /stop_motor std_srvs/srv/Empty \\\"{}\\\"\r\"
+        expect \"\\\$\"
+        send \"exit\r\"
+        expect eof
+    "
 
     if [ $? -eq 0 ]; then
         echo "[$ROBOT] LiDAR stopped."
