@@ -13,9 +13,6 @@ ROBOTS=(
 )
 
 PASSWORD="student"
-# Source ROS 2 before the service call so ros2 is on PATH in non-interactive SSH sessions.
-# Tries jazzy (Ubuntu 24.04) then humble (22.04) as fallback.
-STOP_CMD='for d in /opt/ros/jazzy /opt/ros/humble; do [ -f "$d/setup.bash" ] && source "$d/setup.bash" && break; done && ros2 service call /stop_motor std_srvs/srv/Empty "{}"'
 
 echo "=== Stopping LiDAR on all TurtleBots ==="
 echo ""
@@ -23,12 +20,21 @@ echo ""
 for ROBOT in "${ROBOTS[@]}"; do
     HOST="student@${ROBOT}.cs.nor.ou.edu"
     echo "[$ROBOT] Connecting to $HOST ..."
+
+    # Use bash -i so the robot's .bashrc is sourced (gives ros2 on PATH).
+    # The remote script is piped via stdin to avoid all quoting issues.
     sshpass -p "$PASSWORD" \
         ssh -o StrictHostKeyChecking=accept-new \
             -o ConnectTimeout=5 \
-            "$HOST" "bash -c '$STOP_CMD'" \
-        && echo "[$ROBOT] LiDAR stopped." \
-        || echo "[$ROBOT] FAILED – robot may be offline or unreachable."
+            -T "$HOST" bash -i << 'REMOTE'
+ros2 service call /stop_motor std_srvs/srv/Empty "{}"
+REMOTE
+
+    if [ $? -eq 0 ]; then
+        echo "[$ROBOT] LiDAR stopped."
+    else
+        echo "[$ROBOT] FAILED – check output above for details."
+    fi
     echo ""
 done
 
