@@ -15,8 +15,10 @@ turtlebot4-daemon-restart
 ```
 Check again to see if these topics are listed now.
 
-Open a new terminal and run:
+## Set up terminal
+**Every time you open a new desktop terminal, run:**
 ```bash
+source install/setup.bash
 robot-setup.sh
 ```
 Follow the instructions it prints.
@@ -25,4 +27,27 @@ Follow the instructions it prints.
 From desktop terminal, run:
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true
+```
+
+## Run the reactive controller
+If opening a new terminal, run:
+```bash
+source install/setup.bash
+robot-setup.sh
+```
+Follow the instructions it prints.
+
+Enter the workspace:
+```bash
+cd ros2_ws
+```
+
+Build the project:
+```bash
+colcon build --packages-select reactive_robot
+```
+
+Run `reactive_controller.py`:
+```bash
+ros2 run reactive_robot reactive_controller
 ```
