@@ -20,7 +20,15 @@ Check again to see if these topics are listed now.
 This is the SSH terminal connected to the robot.
 
 ## Set up desktop terminal
-**Every time you open a new desktop terminal, start from `ros2_ws/` and run:**
+Make sure you're in the project workspace:
+```bash
+cd ros2_ws/
+```
+Only if you haven't built the project on this machine before, run:
+```bash
+colcon build --packages-select reactive_robot
+```
+**Every time you open a new desktop terminal, run:**
 ```bash
 source install/setup.bash
 robot-setup.sh
