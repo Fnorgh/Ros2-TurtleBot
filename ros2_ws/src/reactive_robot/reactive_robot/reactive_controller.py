@@ -1,16 +1,14 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import String
-import random
 
 class ReactiveController(Node):
 
     def __init__(self):
         super().__init__('reactive_controller')
 
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
 
         self.scan_sub = self.create_subscription(
             LaserScan,
@@ -23,17 +21,27 @@ class ReactiveController(Node):
 
         self.front_distance = float('inf')
 
+        # Set a very slow forward speed (meters/second)
+        self.slow_speed = 0.05  # adjust lower if needed
+
     def scan_callback(self, msg):
-        self.front_distance = min(msg.ranges)
+        # get the minimum distance in front (front 30 degrees)
+        front_angles = msg.ranges[len(msg.ranges)//2 - 15: len(msg.ranges)//2 + 15]
+        self.front_distance = min(front_angles)
 
     def control_loop(self):
 
-        cmd = Twist()
+        cmd = TwistStamped()
 
-        if self.front_distance < 0.3:
-            cmd.angular.z = 0.5
-        else:
-            cmd.linear.x = 0.1
+        # Stop only if something is too close (collision avoidance)
+        # if self.front_distance < 0.3:
+        #     cmd.linear.x = 0.0
+        #     cmd.angular.z = 0.5  # turn away slowly
+        # else:
+        cmd.twist.linear.x = self.slow_speed  # move forward very slowly
+        cmd.twist.angular.z = 0.0
+
+        self.get_logger().info("Driving")
 
         self.cmd_pub.publish(cmd)
 
