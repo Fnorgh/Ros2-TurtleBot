@@ -47,7 +47,7 @@ echo '     Then run ros2 topic list again.'
 echo '  3. Start LiDAR motor:'
 echo '     ros2 service call /start_motor std_srvs/srv/Empty \"{}\"'
 echo ''
-ssh ${ROBOT_HOST}
+ssh -o StrictHostKeyChecking=accept-new ${ROBOT_HOST}
 "
 
 # ── Terminal 2: Build & Run reactive_controller ──────────────────────────────
