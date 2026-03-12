@@ -1,15 +1,17 @@
 # Ros2-TurtleBot
 
 ## Connect to robot
-From CSN machine:
+SSH into robot:
 ```bash
 ssh student@<nameFromRobot>.cs.nor.ou.edu
 ```
-Enter the password, then run:
+Enter the password.
+
+Check topic list:
 ```bash
 ros2 topic list
 ```
-If topics `/scan`, `/tf`, and `/odom` are not listed, run:
+If topics `/scan`, `/tf`, and `/odom` are not listed, restart the robot:
 ```bash
 turtlebot4-daemon-restart
 ```
