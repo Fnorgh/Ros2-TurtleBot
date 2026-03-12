@@ -58,11 +58,11 @@ ros2 run reactive_robot reactive_controller
 ```
 
 ## Lidar
-Start lidar:
+From robot SSH terminal, start lidar:
 ```bash
 ros2 service call /start_motor std_srvs/srv/Empty "{}"
 ```
-Stop lidar:
+From robot SSH terminal, stop lidar:
 ```bash
 ros2 service call /stop_motor std_srvs/srv/Empty "{}"
 ```
