@@ -21,14 +21,15 @@ for ROBOT in "${ROBOTS[@]}"; do
     HOST="student@${ROBOT}.cs.nor.ou.edu"
     echo "[$ROBOT] Connecting to $HOST ..."
 
-    # Use bash -i so the robot's .bashrc is sourced (gives ros2 on PATH).
-    # The remote script is piped via stdin to avoid all quoting issues.
+    # bash --login sources the robot's profile so ros2 is on PATH.
+    # Command is a single-quoted argument — no heredoc, no stdin conflict with sshpass.
     sshpass -p "$PASSWORD" \
         ssh -o StrictHostKeyChecking=accept-new \
+            -o StrictHostKeyChecking=accept-new \
+            -o BatchMode=no \
             -o ConnectTimeout=5 \
-            -T "$HOST" bash -i << 'REMOTE'
-ros2 service call /stop_motor std_srvs/srv/Empty "{}"
-REMOTE
+            "$HOST" \
+            'bash --login -c "ros2 service call /stop_motor std_srvs/srv/Empty {}"'
 
     if [ $? -eq 0 ]; then
         echo "[$ROBOT] LiDAR stopped."
