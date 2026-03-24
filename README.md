@@ -102,6 +102,7 @@ ros2 service call /stop_motor std_srvs/srv/Empty "{}"
 4. [x] Avoid asymmetric obstacles within 1ft in front of the robot.
 5. [x] Turn randomly (uniformly sampled within ±15°) after every 1ft forward movement.
 6. [x] Drive forward.
+7. [ ] Mapping
 
 ### Documentation
 
