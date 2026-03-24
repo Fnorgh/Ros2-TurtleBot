@@ -96,9 +96,9 @@ ros2 service call /stop_motor std_srvs/srv/Empty "{}"
 
 ### Robot Priorities
 
-1. [ ] Halt if collision(s) detected by bumper(s).
+1. [x] Halt if collision(s) detected by bumper(s).
 2. [x] Accept keyboard movement commands from a human user.
-3. [ ] Escape from (roughly) symmetric obstacles within 1ft in front of the robot.
+3. [x] Escape from (roughly) symmetric obstacles within 1ft in front of the robot.
 4. [x] Avoid asymmetric obstacles within 1ft in front of the robot.
 5. [x] Turn randomly (uniformly sampled within ±15°) after every 1ft forward movement.
 6. [x] Drive forward.
