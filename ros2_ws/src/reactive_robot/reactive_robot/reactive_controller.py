@@ -48,12 +48,12 @@ class ReactiveController(Node):
         self.FRONT_DEG = 30
         self.FRONT_RAD = math.radians(self.FRONT_DEG)
 
-        # Obstacle detection threshold: 1 ft
-        self.OBSTACLE_DIST      = ONE_FOOT_M
+        # Obstacle detection threshold
+        self.OBSTACLE_DIST      = 0.6  # meters
         self.SYMMETRY_THRESHOLD = 0.3  # meters – diff below this → symmetric
 
         # Behavior 5: random ±15° turn every 1 ft
-        self.MAX_TURN_DEG           = 15.0
+        self.MAX_TURN_DEG           = 0
         self.forward_distance_accum = 0.0
 
         # Behavior 5 – random turn state
@@ -187,7 +187,16 @@ class ReactiveController(Node):
             f"Front:{self.front_distance:.2f}  L:{self.left_distance:.2f}  R:{self.right_distance:.2f}"
         )
 
-        # --- Priority 1: bumper hit – halt ---
+        # --- Priority 1: too close – full halt ---
+        if self.front_distance < 0.3:
+            self.is_turning  = False
+            self.is_avoiding = False
+            self.is_escaping = False
+            self.get_logger().info(f"Too close ({self.front_distance:.2f} m) – full halt")
+            self._publish_stop()
+            return
+
+        # --- Priority 2: bumper hit – halt ---
         if self.bump_detected:
             self.is_turning  = False
             self.is_avoiding = False
