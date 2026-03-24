@@ -102,6 +102,14 @@ class ReactiveController(Node):
         self.left_distance  = min(left_ranges) if left_ranges else float('inf')
         self.right_distance = min(right_ranges) if right_ranges else float('inf')
 
+        # DEBUG: log distance at every 5 deg from 0 to 270
+        debug_parts = []
+        for deg in range(0, 275, 5):
+            idx = int(round((math.radians(deg) - msg.angle_min) / angle_increment)) % n
+            r   = msg.ranges[idx]
+            debug_parts.append(f"{deg}°={r:.2f}")
+        self.get_logger().info("ANGLES: " + "  ".join(debug_parts))
+
     def hazard_callback(self, msg):
         self.bump_detected = any(
             h.type == HazardDetection.BUMP for h in msg.detections
