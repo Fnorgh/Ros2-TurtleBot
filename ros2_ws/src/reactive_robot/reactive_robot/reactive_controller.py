@@ -102,24 +102,6 @@ class ReactiveController(Node):
         self.left_distance  = min(left_ranges) if left_ranges else float('inf')
         self.right_distance = min(right_ranges) if right_ranges else float('inf')
 
-        # DEBUG: scan layout and raw index samples
-        self.get_logger().info(
-            f"[SCAN] n={n}  angle_min={math.degrees(msg.angle_min):.1f}°  "
-            f"angle_max={math.degrees(msg.angle_max):.1f}°  "
-            f"idx0={msg.ranges[0]:.2f}  "
-            f"idx{n//4}={msg.ranges[n//4]:.2f}  "
-            f"idx{n//2}={msg.ranges[n//2]:.2f}  "
-            f"idx{3*n//4}={msg.ranges[3*n//4]:.2f}"
-        )
-        # DEBUG: raw index every 5 deg across full scan
-        debug_parts = []
-        for deg in range(0, 360, 5):
-            idx = int(round((math.radians(deg) - msg.angle_min) / angle_increment)) % n
-            r   = msg.ranges[idx]
-            val = f"{r:.2f}" if math.isfinite(r) else "inf"
-            debug_parts.append(f"{deg}={val}")
-        self.get_logger().info("DEG: " + "  ".join(debug_parts))
-
     def hazard_callback(self, msg):
         self.bump_detected = any(
             h.type == HazardDetection.BUMP for h in msg.detections
