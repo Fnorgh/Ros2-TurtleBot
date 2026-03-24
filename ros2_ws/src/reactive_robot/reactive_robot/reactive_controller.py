@@ -84,22 +84,31 @@ class ReactiveController(Node):
         forward_index = int(round((3 * math.pi / 2 - msg.angle_min) / angle_increment)) % n
         front_range   = int(self.FRONT_RAD / angle_increment)
 
+        center_range = int(math.radians(10) / angle_increment)  # front: ±10 deg
         left_ranges  = []
         right_ranges = []
+        front_ranges = []
 
-        for i in range(1, front_range + 1):
-            r_left  = msg.ranges[(forward_index + i) % n]
-            r_right = msg.ranges[(forward_index - i) % n]
-            if math.isfinite(r_left):
-                left_ranges.append(r_left)
-            if math.isfinite(r_right):
-                right_ranges.append(r_right)
+        # Front: narrow center window ±10 deg around 3pi/2
+        for i in range(-center_range, center_range + 1):
+            r = msg.ranges[(forward_index + i) % n]
+            if math.isfinite(r) and r > 0.01:
+                front_ranges.append(r)
 
-        center     = msg.ranges[forward_index]
-        all_ranges = left_ranges + right_ranges + ([center] if math.isfinite(center) else [])
+        # Left: forward_index+center_range+1 to forward_index+front_range
+        for i in range(center_range + 1, front_range + 1):
+            r = msg.ranges[(forward_index + i) % n]
+            if math.isfinite(r) and r > 0.01:
+                left_ranges.append(r)
 
-        self.front_distance = min(all_ranges)  if all_ranges  else float('inf')
-        self.left_distance  = min(left_ranges) if left_ranges else float('inf')
+        # Right: forward_index-front_range to forward_index-center_range-1
+        for i in range(center_range + 1, front_range + 1):
+            r = msg.ranges[(forward_index - i) % n]
+            if math.isfinite(r) and r > 0.01:
+                right_ranges.append(r)
+
+        self.front_distance = min(front_ranges) if front_ranges else float('inf')
+        self.left_distance  = min(left_ranges)  if left_ranges  else float('inf')
         self.right_distance = min(right_ranges) if right_ranges else float('inf')
 
     def hazard_callback(self, msg):
