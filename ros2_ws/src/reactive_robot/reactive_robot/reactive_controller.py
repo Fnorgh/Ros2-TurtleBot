@@ -35,151 +35,237 @@ class ReactiveController(Node):
         self.timer = self.create_timer(self.timer_period, self.control_loop)
 
         self.front_distance = float('inf')
+        self.left_distance  = float('inf')
+        self.right_distance = float('inf')
 
         # Set a very slow forward speed (meters/second)
-        self.slow_speed = 0.1
+        self.slow_speed   =  0.1
+        self.backup_speed = -0.1
 
         # Most recent teleop command and the time it arrived
         self.teleop_cmd = None
         self.last_teleop_time = None
 
-        self.FRONT_DEG = 15 # ~15 seems to work well
+        self.FRONT_DEG = 15  # ~15 seems to work well
         self.FRONT_RAD = math.radians(self.FRONT_DEG)
 
+        # If |left_distance - right_distance| > threshold → asymmetric
+        self.SYMMETRY_THRESHOLD = 0.15  # meters
+
         # BEHAVIOR #5: random turn after every 1 ft forward
-        self.ONE_FOOT_M = 0.3048
-        self.MAX_TURN_DEG = 15.0
-        self.turn_speed = 0.5  # rad/s
+        self.ONE_FOOT_M    = 0.3048
+        self.MAX_TURN_DEG  = 15.0
+        self.turn_speed    = 0.5  # rad/s
 
-        self.forward_distance_accum = 0.0 # Estimated forward distance traveled during autonomous driving
+        self.forward_distance_accum = 0.0
 
-        # Turning state
-        self.is_turning = False
-        self.turn_end_time = None
+        # Random-turn state (Behavior 5)
+        self.is_turning           = False
+        self.turn_end_time        = None
         self.current_turn_direction = 0.0
 
+        # Asymmetric avoidance turn state
+        self.is_avoiding          = False
+        self.avoid_end_time       = None
+        self.avoid_turn_direction = 0.0
+
+        # Symmetric escape state (back up then spin)
+        self.is_escaping          = False
+        self.escape_phase         = None   # 'backing' | 'turning'
+        self.escape_phase_end_time = None
+        self.escape_turn_direction = 0.0
+
+    # ------------------------------------------------------------------
+    # Sensor callback
+    # ------------------------------------------------------------------
+
     def scan_callback(self, msg):
-        mid_index = len(msg.ranges) // 2
+        mid_index   = len(msg.ranges) // 2
         front_range = int(self.FRONT_RAD / msg.angle_increment)
 
-        start = max(0, mid_index - front_range)
-        end = min(len(msg.ranges), mid_index + front_range)
+        start     = max(0, mid_index - front_range)
+        end       = min(len(msg.ranges), mid_index + front_range)
+        mid_front = (start + end) // 2
 
-        front_angles = msg.ranges[start:end]
+        # Indices below mid → robot's right (negative angles)
+        # Indices above mid → robot's left  (positive angles)
+        right_ranges = [r for r in msg.ranges[start:mid_front]  if math.isfinite(r)]
+        left_ranges  = [r for r in msg.ranges[mid_front:end]    if math.isfinite(r)]
+        all_ranges   = right_ranges + left_ranges
 
-        # Filter out inf/nan values
-        valid_ranges = [r for r in front_angles if math.isfinite(r)]
+        self.front_distance = min(all_ranges)   if all_ranges   else float('inf')
+        self.left_distance  = min(left_ranges)  if left_ranges  else float('inf')
+        self.right_distance = min(right_ranges) if right_ranges else float('inf')
 
-        if valid_ranges:
-            self.front_distance = min(valid_ranges)
-        else:
-            self.front_distance = float('inf')
+    # ------------------------------------------------------------------
+    # Teleop helpers
+    # ------------------------------------------------------------------
 
     def teleop_callback(self, msg):
-        """Store the latest teleop command and timestamp."""
-        self.teleop_cmd = msg
+        self.teleop_cmd       = msg
         self.last_teleop_time = self.get_clock().now()
 
     def _teleop_active(self):
-        """Return True if a teleop command arrived within the last TELEOP_TIMEOUT seconds."""
         if self.last_teleop_time is None:
             return False
         elapsed = (self.get_clock().now() - self.last_teleop_time).nanoseconds * 1e-9
         return elapsed < TELEOP_TIMEOUT
 
+    # ------------------------------------------------------------------
+    # Maneuver starters
+    # ------------------------------------------------------------------
 
-    # For Behavior 5
     def _start_random_turn(self):
-        """Begin a random turn in range [-15 deg, +15 deg]."""
+        """Begin a random turn in range [-15 deg, +15 deg] (Behavior 5)."""
         angle_deg = random.uniform(-self.MAX_TURN_DEG, self.MAX_TURN_DEG)
         angle_rad = math.radians(angle_deg)
-
-        # Don't turn if its super close to zero
         if abs(angle_rad) < 1e-3:
             angle_rad = math.radians(5.0)
 
         turn_duration = abs(angle_rad) / self.turn_speed
-
-        self.is_turning = True
+        self.is_turning             = True
         self.current_turn_direction = 1.0 if angle_rad > 0.0 else -1.0
-        self.turn_end_time = self.get_clock().now().nanoseconds * 1e-9 + turn_duration
-
-        # Debugging output
+        self.turn_end_time          = self.get_clock().now().nanoseconds * 1e-9 + turn_duration
         self.get_logger().info(
-            f"Reached 1 ft. Turning {angle_deg:.2f} deg "
-            f"for {turn_duration:.2f} s"
+            f"Reached 1 ft. Turning {angle_deg:.2f} deg for {turn_duration:.2f} s"
         )
+
+    def _start_avoidance_turn(self):
+        """Asymmetric obstacle: turn toward the open side for 90 deg."""
+        if self.left_distance >= self.right_distance:
+            self.avoid_turn_direction = 1.0   # more space on left → turn left
+        else:
+            self.avoid_turn_direction = -1.0  # more space on right → turn right
+
+        turn_duration       = math.radians(90.0) / self.turn_speed
+        self.is_avoiding    = True
+        self.avoid_end_time = self.get_clock().now().nanoseconds * 1e-9 + turn_duration
+        self.get_logger().info(
+            f"Asymmetric obstacle (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – "
+            f"turning {'left' if self.avoid_turn_direction > 0 else 'right'} for {turn_duration:.2f} s"
+        )
+
+    def _start_escape(self):
+        """Symmetric obstacle: back up for 1 s, then turn 90 deg."""
+        self.is_escaping           = True
+        self.escape_phase          = 'backing'
+        self.escape_phase_end_time = self.get_clock().now().nanoseconds * 1e-9 + 1.0
+        self.escape_turn_direction = 1.0 if random.random() > 0.5 else -1.0
+        self.get_logger().info("Symmetric obstacle – escaping (backing up)")
+
+    # ------------------------------------------------------------------
+    # Publish helpers
+    # ------------------------------------------------------------------
 
     def _publish_stop(self):
         cmd = TwistStamped()
-        cmd.twist.linear.x = 0.0
-        cmd.twist.angular.z = 0.0
         self.cmd_pub.publish(cmd)
 
     def _publish_forward(self):
         cmd = TwistStamped()
         cmd.twist.linear.x = self.slow_speed
-        cmd.twist.angular.z = 0.0
         self.cmd_pub.publish(cmd)
 
-    def _publish_turn(self):
+    def _publish_backup(self):
         cmd = TwistStamped()
-        cmd.twist.linear.x = 0.0
-        cmd.twist.angular.z = self.current_turn_direction * self.turn_speed
+        cmd.twist.linear.x = self.backup_speed
         self.cmd_pub.publish(cmd)
+
+    def _publish_turn(self, direction):
+        cmd = TwistStamped()
+        cmd.twist.angular.z = direction * self.turn_speed
+        self.cmd_pub.publish(cmd)
+
+    # ------------------------------------------------------------------
+    # Main control loop
+    # ------------------------------------------------------------------
 
     def control_loop(self):
-        SAFE_DISTANCE = 0.5  # In meters
+        SAFE_DISTANCE = 0.5  # meters
         now_sec = self.get_clock().now().nanoseconds * 1e-9
 
-        self.get_logger().info(f"Distance: {self.front_distance:.2f}")
+        self.get_logger().info(
+            f"Front:{self.front_distance:.2f}  L:{self.left_distance:.2f}  R:{self.right_distance:.2f}"
+        )
 
-        if self.front_distance < SAFE_DISTANCE:
-            # Highest priority: stop for obstacle
-            self.is_turning = False
-            self.turn_end_time = None
-            self.get_logger().info(
-                f"Obstacle too close ({self.front_distance:.2f} m) - stopping"
-            )
-            self._publish_stop()
-
-        elif self._teleop_active():
-            # Next priority: human teleop
-            self.is_turning = False
-            self.turn_end_time = None
-            self.get_logger().info("Teleop active - forwarding human input")
+        # --- Priority 1: human teleop ---
+        if self._teleop_active():
+            self.is_turning  = False
+            self.is_avoiding = False
+            self.is_escaping = False
+            self.get_logger().info("Teleop active – forwarding human input")
             self.cmd_pub.publish(self.teleop_cmd)
+            return
 
-        elif self.is_turning:
-            # Continue random turn until done
+        # --- Priority 2: finish escape (back + spin) ---
+        if self.is_escaping:
+            if self.escape_phase == 'backing':
+                if now_sec < self.escape_phase_end_time:
+                    self._publish_backup()
+                else:
+                    # Transition to spin phase
+                    self.escape_phase          = 'turning'
+                    self.escape_phase_end_time = now_sec + math.radians(90.0) / self.turn_speed
+                    self.get_logger().info("Escape: backup done – spinning 90 deg")
+                    self._publish_turn(self.escape_turn_direction)
+            else:  # 'turning'
+                if now_sec < self.escape_phase_end_time:
+                    self._publish_turn(self.escape_turn_direction)
+                else:
+                    self.is_escaping              = False
+                    self.escape_phase             = None
+                    self.forward_distance_accum   = 0.0
+                    self.get_logger().info("Escape complete – resuming forward drive")
+                    self._publish_forward()
+            return
+
+        # --- Priority 3: finish asymmetric avoidance turn ---
+        if self.is_avoiding:
+            if now_sec < self.avoid_end_time:
+                self._publish_turn(self.avoid_turn_direction)
+            else:
+                self.is_avoiding              = False
+                self.forward_distance_accum   = 0.0
+                self.get_logger().info("Avoidance turn complete – resuming forward drive")
+                self._publish_forward()
+            return
+
+        # --- Priority 4: new obstacle detected ---
+        if self.front_distance < SAFE_DISTANCE:
+            self.is_turning = False   # cancel any Behavior-5 turn
+            asymmetry = abs(self.left_distance - self.right_distance)
+            if asymmetry > self.SYMMETRY_THRESHOLD:
+                self._start_avoidance_turn()
+                self._publish_turn(self.avoid_turn_direction)
+            else:
+                self._start_escape()
+                self._publish_backup()
+            return
+
+        # --- Priority 5: Behavior-5 random turn in progress ---
+        if self.is_turning:
             if now_sec < self.turn_end_time:
-                self.get_logger().info("Executing random turn")
-                self._publish_turn()
+                self._publish_turn(self.current_turn_direction)
             else:
-                self.is_turning = False
-                self.turn_end_time = None
+                self.is_turning             = False
                 self.forward_distance_accum = 0.0
-                self.get_logger().info("Turn complete, resuming forward drive")
+                self.get_logger().info("Random turn complete – resuming forward drive")
                 self._publish_forward()
+            return
 
+        # --- Priority 6: autonomous forward drive ---
+        self.forward_distance_accum += self.slow_speed * self.timer_period
+        if self.forward_distance_accum >= self.ONE_FOOT_M:
+            self._start_random_turn()
+            self._publish_turn(self.current_turn_direction)
         else:
-            # Autonomous forward drive
-            self.forward_distance_accum += self.slow_speed * self.timer_period
-
-            if self.forward_distance_accum >= self.ONE_FOOT_M:
-                self._start_random_turn()
-                self._publish_turn()
-            else:
-                self._publish_forward()
+            self._publish_forward()
 
 
 def main(args=None):
     rclpy.init(args=args)
-
     node = ReactiveController()
-
     rclpy.spin(node)
-
     node.destroy_node()
     rclpy.shutdown()
 
