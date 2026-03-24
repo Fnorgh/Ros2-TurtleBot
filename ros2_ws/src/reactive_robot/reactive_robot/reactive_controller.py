@@ -46,15 +46,15 @@ class ReactiveController(Node):
         self.teleop_cmd = None
         self.last_teleop_time = None
 
-        self.FRONT_DEG = 15  # ~15 seems to work well
+        self.FRONT_DEG = 30  # 30 deg each side (left 0→+30, right -30→0)
         self.FRONT_RAD = math.radians(self.FRONT_DEG)
 
         # If |left_distance - right_distance| > threshold → asymmetric
-        self.SYMMETRY_THRESHOLD = 0.1  # meters
+        self.SYMMETRY_THRESHOLD = 0.3  # meters
 
         # BEHAVIOR #5: random turn after every 1 ft forward
         self.ONE_FOOT_M    = 0.3048
-        self.MAX_TURN_DEG  = 15.0
+        self.MAX_TURN_DEG  = 0.0
         self.turn_speed    = 0.5  # rad/s
 
         self.forward_distance_accum = 0.0
@@ -232,7 +232,8 @@ class ReactiveController(Node):
 
         # --- Priority 4: new obstacle detected ---
         if self.front_distance < SAFE_DISTANCE:
-            self.is_turning = False   # cancel any Behavior-5 turn
+            self.is_turning  = False  # cancel any Behavior-5 turn
+            self.is_avoiding = False  # cancel any in-progress avoidance turn
             asymmetry = abs(self.left_distance - self.right_distance)
             if asymmetry > self.SYMMETRY_THRESHOLD:
                 self._start_avoidance_turn()
