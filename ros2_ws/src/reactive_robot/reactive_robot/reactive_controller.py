@@ -80,18 +80,27 @@ class ReactiveController(Node):
     # ------------------------------------------------------------------
 
     def scan_callback(self, msg):
-        mid_index   = len(msg.ranges) // 2
-        front_range = int(self.FRONT_RAD / msg.angle_increment)
+        n               = len(msg.ranges)
+        angle_increment = msg.angle_increment
 
-        start     = max(0, mid_index - front_range)
-        end       = min(len(msg.ranges), mid_index + front_range)
-        mid_front = (start + end) // 2
+        # Compute the index that points directly forward (angle = 0)
+        forward_index = int(round((0.0 - msg.angle_min) / angle_increment)) % n
+        front_range   = int(self.FRONT_RAD / angle_increment)
 
-        # Indices below mid → robot's right (negative angles)
-        # Indices above mid → robot's left  (positive angles)
-        right_ranges = [r for r in msg.ranges[start:mid_front]  if math.isfinite(r)]
-        left_ranges  = [r for r in msg.ranges[mid_front:end]    if math.isfinite(r)]
-        all_ranges   = right_ranges + left_ranges
+        left_ranges  = []
+        right_ranges = []
+
+        for i in range(1, front_range + 1):
+            r_left  = msg.ranges[(forward_index + i) % n]
+            r_right = msg.ranges[(forward_index - i) % n]
+            if math.isfinite(r_left):
+                left_ranges.append(r_left)
+            if math.isfinite(r_right):
+                right_ranges.append(r_right)
+
+        # Include the dead-ahead ray in both halves for front_distance
+        center = msg.ranges[forward_index]
+        all_ranges = left_ranges + right_ranges + ([center] if math.isfinite(center) else [])
 
         self.front_distance = min(all_ranges)   if all_ranges   else float('inf')
         self.left_distance  = min(left_ranges)  if left_ranges  else float('inf')
@@ -131,18 +140,19 @@ class ReactiveController(Node):
         )
 
     def _start_avoidance_turn(self):
-        """Asymmetric obstacle: turn toward the open side for 90 deg."""
-        if self.left_distance >= self.right_distance:
-            self.avoid_turn_direction = 1.0   # more space on left → turn left
+        """Turn 90 deg: toward open side if asymmetric, random if symmetric."""
+        asymmetry = abs(self.left_distance - self.right_distance)
+        if asymmetry > self.SYMMETRY_THRESHOLD:
+            self.avoid_turn_direction = 1.0 if self.left_distance >= self.right_distance else -1.0
         else:
-            self.avoid_turn_direction = -1.0  # more space on right → turn right
+            self.avoid_turn_direction = 1.0 if random.random() > 0.5 else -1.0
 
         turn_duration       = math.radians(90.0) / self.turn_speed
         self.is_avoiding    = True
         self.avoid_end_time = self.get_clock().now().nanoseconds * 1e-9 + turn_duration
         self.get_logger().info(
-            f"Asymmetric obstacle (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – "
-            f"turning {'left' if self.avoid_turn_direction > 0 else 'right'} for {turn_duration:.2f} s"
+            f"Turning 90 deg {'left' if self.avoid_turn_direction > 0 else 'right'} "
+            f"for {turn_duration:.2f} s"
         )
 
     def _start_escape(self):
@@ -181,45 +191,50 @@ class ReactiveController(Node):
     # ------------------------------------------------------------------
 
     def control_loop(self):
-        SAFE_DISTANCE = 0.5  # meters
+        STOP_DISTANCE  = 0.1  # meters – full halt
+        AVOID_DISTANCE = 0.6  # meters – turn 90 deg
         now_sec = self.get_clock().now().nanoseconds * 1e-9
 
         self.get_logger().info(
             f"Front:{self.front_distance:.2f}  L:{self.left_distance:.2f}  R:{self.right_distance:.2f}"
         )
 
-        # --- Priority 1: human teleop ---
+        # --- Priority 1: too close – full stop ---
+        if self.front_distance < STOP_DISTANCE:
+            self.is_turning  = False
+            self.is_avoiding = False
+            self.get_logger().info(
+                f"Too close ({self.front_distance:.2f} m) – full stop"
+            )
+            self._publish_stop()
+            return
+
+        # --- Priority 2: within avoid range – turn 90 deg ---
+        if self.front_distance < AVOID_DISTANCE:
+            self.is_turning  = False
+            self.is_avoiding = False
+            asymmetry = abs(self.left_distance - self.right_distance)
+            if asymmetry > self.SYMMETRY_THRESHOLD:
+                self.get_logger().info(
+                    f"Asymmetric (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – turning toward open side"
+                )
+            else:
+                self.get_logger().info(
+                    f"Symmetric (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – turning 90 deg"
+                )
+            self._start_avoidance_turn()
+            self._publish_turn(self.avoid_turn_direction)
+            return
+
+        # --- Priority 3: human teleop ---
         if self._teleop_active():
             self.is_turning  = False
             self.is_avoiding = False
-            self.is_escaping = False
             self.get_logger().info("Teleop active – forwarding human input")
             self.cmd_pub.publish(self.teleop_cmd)
             return
 
-        # --- Priority 2: finish escape (back + spin) ---
-        if self.is_escaping:
-            if self.escape_phase == 'backing':
-                if now_sec < self.escape_phase_end_time:
-                    self._publish_backup()
-                else:
-                    # Transition to spin phase
-                    self.escape_phase          = 'turning'
-                    self.escape_phase_end_time = now_sec + math.radians(90.0) / self.turn_speed
-                    self.get_logger().info("Escape: backup done – spinning 90 deg")
-                    self._publish_turn(self.escape_turn_direction)
-            else:  # 'turning'
-                if now_sec < self.escape_phase_end_time:
-                    self._publish_turn(self.escape_turn_direction)
-                else:
-                    self.is_escaping              = False
-                    self.escape_phase             = None
-                    self.forward_distance_accum   = 0.0
-                    self.get_logger().info("Escape complete – resuming forward drive")
-                    self._publish_forward()
-            return
-
-        # --- Priority 3: finish asymmetric avoidance turn ---
+        # --- Priority 4: finish avoidance turn ---
         if self.is_avoiding:
             if now_sec < self.avoid_end_time:
                 self._publish_turn(self.avoid_turn_direction)
@@ -228,21 +243,6 @@ class ReactiveController(Node):
                 self.forward_distance_accum   = 0.0
                 self.get_logger().info("Avoidance turn complete – resuming forward drive")
                 self._publish_forward()
-            return
-
-        # --- Priority 4: new obstacle detected ---
-        if self.front_distance < SAFE_DISTANCE:
-            self.is_turning  = False  # cancel any Behavior-5 turn
-            self.is_avoiding = False  # cancel any in-progress avoidance turn
-            asymmetry = abs(self.left_distance - self.right_distance)
-            if asymmetry > self.SYMMETRY_THRESHOLD:
-                self._start_avoidance_turn()
-                self._publish_turn(self.avoid_turn_direction)
-            else:
-                self.get_logger().info(
-                    f"Symmetric obstacle (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – halting"
-                )
-                self._publish_stop()
             return
 
         # --- Priority 5: Behavior-5 random turn in progress ---
