@@ -50,7 +50,7 @@ class ReactiveController(Node):
         self.FRONT_RAD = math.radians(self.FRONT_DEG)
 
         # If |left_distance - right_distance| > threshold → asymmetric
-        self.SYMMETRY_THRESHOLD = 0.15  # meters
+        self.SYMMETRY_THRESHOLD = 0.1  # meters
 
         # BEHAVIOR #5: random turn after every 1 ft forward
         self.ONE_FOOT_M    = 0.3048
@@ -238,8 +238,10 @@ class ReactiveController(Node):
                 self._start_avoidance_turn()
                 self._publish_turn(self.avoid_turn_direction)
             else:
-                self._start_escape()
-                self._publish_backup()
+                self.get_logger().info(
+                    f"Symmetric obstacle (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – halting"
+                )
+                self._publish_stop()
             return
 
         # --- Priority 5: Behavior-5 random turn in progress ---
