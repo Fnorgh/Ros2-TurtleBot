@@ -80,8 +80,8 @@ class ReactiveController(Node):
         n               = len(msg.ranges)
         angle_increment = msg.angle_increment
 
-        # Index pointing directly forward (LiDAR zero is 90 deg left, so offset +90 deg)
-        forward_index = int(round((math.pi / 2 - msg.angle_min) / angle_increment)) % n
+        # Index pointing directly forward (LiDAR zero is 90 deg left, so offset +270 deg)
+        forward_index = int(round((3 * math.pi / 2 - msg.angle_min) / angle_increment)) % n
         front_range   = int(self.FRONT_RAD / angle_increment)
 
         left_ranges  = []
