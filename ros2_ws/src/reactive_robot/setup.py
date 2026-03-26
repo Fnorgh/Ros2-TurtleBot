@@ -11,7 +11,6 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', [
-            'launch/reactive_robot.launch.py',
             'launch/reactive_robot.launch.xml',
         ]),
     ],
