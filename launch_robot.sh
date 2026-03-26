@@ -87,7 +87,7 @@ echo 'Starting teleop_twist_keyboard (use conservative speeds: speed=0.1 turn=0.
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true --remap /cmd_vel:=/teleop_cmd_vel
 "
 
-# ── Terminal 4: SLAM + RViz Mapping ─────────────────────────────────────────
+# ── Terminal 4: SLAM Mapping ────────────────────────────────────────────────
 open_tab "TB4 – SLAM Mapping" "
 echo '=== SLAM Mapping Terminal ==='
 echo ''
@@ -100,7 +100,25 @@ printf '%s\n' "${ROBOT_NAME}" | robot-setup.sh
 echo ''
 echo 'Launching TurtleBot4 SLAM ...'
 echo ''
-echo 'After RViz opens, configure it like this:'
+echo 'Drive the robot from the teleop terminal while the reactive controller stays running.'
+echo ''
+ros2 launch turtlebot4_navigation slam.launch.py
+"
+
+# ── Terminal 5: RViz Visualization ──────────────────────────────────────────
+open_tab "TB4 – RViz" "
+echo '=== RViz Visualization Terminal ==='
+echo ''
+cd \"$WS_DIR\"
+echo 'Sourcing install/setup.bash ...'
+source install/setup.bash 2>/dev/null || true
+echo ''
+echo 'Running robot-setup.sh ...'
+printf '%s\n' "${ROBOT_NAME}" | robot-setup.sh
+echo ''
+echo 'Launching RViz2 (view_robot) ...'
+echo ''
+echo 'Configure RViz like this:'
 echo '  1. Set Fixed Frame to: odom'
 echo '  2. Add TF display'
 echo '     - Uncheck All Enabled'
@@ -115,9 +133,7 @@ echo '  6. Optional: Add PointCloud2 display'
 echo '     - Topic: /oakd/rgb/preview/depth/points'
 echo '  7. Optional: enable oakd_rgb_camera_optical_frame in TF'
 echo ''
-echo 'Drive the robot from the teleop terminal while the reactive controller stays running.'
-echo ''
-ros2 launch turtlebot4_navigation slam.launch.py
+ros2 launch turtlebot4_viz view_robot.launch.py
 "
 
 echo ""
@@ -126,7 +142,8 @@ echo ""
 echo "Order of operations:"
 echo "  1. Terminal 1 (SSH): verify /scan /tf /odom, start LiDAR motor"
 echo "  2. Terminal 2 (Reactive Controller): run robot-setup.sh, build, then run"
-echo "  3. Terminal 4 (RViz and SLAM Mapping): launch slam.launch.py and configure RViz"
-echo "  4. Terminal 3 (Teleop): run robot-setup.sh, then drive with keyboard"
-echo "  5. When finished, save the map from a sourced desktop terminal:"
+echo "  3. Terminal 4 (SLAM Mapping): launch slam.launch.py"
+echo "  4. Terminal 5 (RViz): launch view_robot.launch.py and configure displays"
+echo "  5. Terminal 3 (Teleop): drive the robot for mapping"
+echo "  6. When finished, save the map from a sourced desktop terminal:"
 echo "     ros2 run nav2_map_server map_saver_cli -f ~/tb4_map"
