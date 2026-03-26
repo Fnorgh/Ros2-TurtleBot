@@ -51,7 +51,17 @@ robot-setup.sh
 
 Follow the instructions it prints.
 
-### Control the robot
+### Run the whole project (reactive controller, teleop, and RViz)
+
+Make sure your terminal is set up with instructions above.
+
+From desktop terminal, run:
+
+```bash
+source install/setup.bash && ros2 launch reactive_robot reactive_robot.launch.xml robot_name:=<turtlebot-name>
+```
+
+### Run teleop only
 
 Make sure your terminal is set up with instructions above.
 
@@ -61,7 +71,7 @@ From desktop terminal, run:
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p stamped:=true
 ```
 
-### Run the reactive controller
+### Run the reactive controller only
 
 Make sure your terminal is set up with instructions above.
 
