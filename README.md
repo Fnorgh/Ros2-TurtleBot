@@ -92,6 +92,54 @@ From robot SSH terminal, stop lidar:
 ros2 service call /stop_motor std_srvs/srv/Empty "{}"
 ```
 
+### Mapping
+
+This should only ever be done while the Lidar is running.
+
+On a desktop terminal, run this:
+
+```bash
+ros2 launch turtlebot4_navigation slam.launch.py
+```
+
+> Note: should be done after sourcing it and running `robot-setup.sh`, of course.
+
+#### When you are finished mapping, run:
+
+```bash
+ros2 run nav2_map_server map_saver_cli -f ~/tb4_map
+```
+
+This will put the two map files in your home directory.
+
+#### To view the map with RViz, do the following:
+
+> Note: this is not necessary, but it gives a real-time visualization of the map.
+
+Open a desktop terminal, source it and run `robot-setup.sh`.
+
+Then, open RViz:
+
+```
+ros2 launch turtlebot4_viz view_robot.launch.py
+```
+
+Adjust the following settings:
+
+1. Set `Fixed Frame` to: `odom`
+2. Add `TF` display
+   - Check and uncheck `All Enabled`
+   - Enable only: `odom`
+3. Add `RobotModel` display
+   - Description Topic: /robot_description
+4. Add `LaserScan` display
+   - Topic: `/scan`
+5. Add `Map` display
+   - Topic: `/map`
+6. Optional: Add `PointCloud2` display
+   - Topic: `/oakd/rgb/preview/depth/points`
+7. Optional: enable `oakd_rgb_camera_optical_frame` in `TF`
+
 ## Progress
 
 ### Robot Priorities
