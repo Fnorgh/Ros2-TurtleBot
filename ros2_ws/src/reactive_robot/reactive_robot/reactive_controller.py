@@ -7,7 +7,7 @@ import math
 import random
 
 TELEOP_TIMEOUT  = 5.0
-ONE_FOOT_M      = 0.3048  # 1 ft in meters
+ONE_FOOT_M      = 0.3048  # 1 ft
 
 
 class ReactiveController(Node):
@@ -29,7 +29,7 @@ class ReactiveController(Node):
         self.timer_period = 0.05
         self.timer = self.create_timer(self.timer_period, self.control_loop)
 
-        # Sensor state
+        # Sensors
         self.front_distance = float('inf')
         self.left_distance  = float('inf')
         self.right_distance = float('inf')
@@ -44,43 +44,41 @@ class ReactiveController(Node):
         self.teleop_cmd       = None
         self.last_teleop_time = None
 
-        # LiDAR cone: 30 deg each side
+        # Lidar cone
         self.FRONT_DEG = 30
         self.FRONT_RAD = math.radians(self.FRONT_DEG)
 
-        # Obstacle detection threshold
+        # Obstacle detection
         self.OBSTACLE_DIST      = 0.6  # meters
-        self.SYMMETRY_THRESHOLD = 0.3  # meters – diff below this → symmetric
+        self.SYMMETRY_THRESHOLD = 0.3  # meters each side
 
-        # Behavior 5: random ±15° turn every 1 ft
+        # Behavior 5
         self.MAX_TURN_DEG           = 15
         self.forward_distance_accum = 0.0
-
-        # Behavior 5 – random turn state
         self.is_turning             = False
         self.turn_end_time          = None
         self.current_turn_direction = 0.0
 
-        # Behavior 4 – asymmetric avoidance state
+        # Behavior 4
         self.is_avoiding          = False
         self.avoid_end_time       = None
         self.avoid_turn_direction = 0.0
 
-        # Behavior 3 – symmetric escape state
+        # Behavior 3
         self.is_escaping           = False
-        self.escape_phase          = None   # 'backing' | 'turning'
+        self.escape_phase          = None
         self.escape_phase_end_time = None
         self.escape_turn_direction = 0.0
 
-    # ------------------------------------------------------------------
+    #
     # Sensor callbacks
-    # ------------------------------------------------------------------
+    #
 
     def scan_callback(self, msg):
         n               = len(msg.ranges)
         angle_increment = msg.angle_increment
 
-        # Index pointing directly forward (LiDAR zero is 90 deg left, so offset +270 deg)
+        # Index pointing directly forward
         forward_index = int(round((3 * math.pi / 2 - msg.angle_min) / angle_increment)) % n
         front_range   = int(self.FRONT_RAD / angle_increment)
 
@@ -89,19 +87,19 @@ class ReactiveController(Node):
         right_ranges = []
         front_ranges = []
 
-        # Front: narrow center window ±10 deg around 3pi/2
+        # Front
         for i in range(-center_range, center_range + 1):
             r = msg.ranges[(forward_index + i) % n]
             if math.isfinite(r) and r > 0.01:
                 front_ranges.append(r)
 
-        # Left: forward_index+center_range+1 to forward_index+front_range
+        # Left
         for i in range(center_range + 1, front_range + 1):
             r = msg.ranges[(forward_index + i) % n]
             if math.isfinite(r) and r > 0.01:
                 left_ranges.append(r)
 
-        # Right: forward_index-front_range to forward_index-center_range-1
+        # Right
         for i in range(center_range + 1, front_range + 1):
             r = msg.ranges[(forward_index - i) % n]
             if math.isfinite(r) and r > 0.01:
@@ -126,9 +124,9 @@ class ReactiveController(Node):
         elapsed = (self.get_clock().now() - self.last_teleop_time).nanoseconds * 1e-9
         return elapsed < TELEOP_TIMEOUT
 
-    # ------------------------------------------------------------------
+    #
     # Maneuver starters
-    # ------------------------------------------------------------------
+    #
 
     def _start_escape(self):
         """Behavior 3: back up 1 s then spin 90 deg (symmetric obstacle)."""
@@ -150,7 +148,7 @@ class ReactiveController(Node):
         )
 
     def _start_random_turn(self):
-        """Behavior 5: random turn uniformly sampled within ±15°."""
+        """Behavior 5: random turn uniformly sampled within 15 degrees."""
         angle_deg = random.uniform(-self.MAX_TURN_DEG, self.MAX_TURN_DEG)
         angle_rad = math.radians(angle_deg)
         if abs(angle_rad) < 1e-3:
@@ -163,9 +161,9 @@ class ReactiveController(Node):
             f"Reached 1 ft – random turn {angle_deg:.1f} deg for {turn_duration:.2f} s"
         )
 
-    # ------------------------------------------------------------------
+    #
     # Publish helpers
-    # ------------------------------------------------------------------
+    #
 
     def _publish_stop(self):
         self.cmd_pub.publish(TwistStamped())
@@ -185,9 +183,9 @@ class ReactiveController(Node):
         cmd.twist.angular.z = direction * self.turn_speed
         self.cmd_pub.publish(cmd)
 
-    # ------------------------------------------------------------------
+    #
     # Main control loop
-    # ------------------------------------------------------------------
+    #
 
     def control_loop(self):
         now_sec = self.get_clock().now().nanoseconds * 1e-9
@@ -196,8 +194,8 @@ class ReactiveController(Node):
             f"Front:{self.front_distance:.2f}  L:{self.left_distance:.2f}  R:{self.right_distance:.2f}"
         )
 
-        # --- Priority 1: too close – full halt ---
-        if self.front_distance < 0.3:
+        # Priority 1: obstacle too close
+        if self.front_distance < 0.3 or self.bump_detected:
             self.is_turning  = False
             self.is_avoiding = False
             self.is_escaping = False
@@ -205,16 +203,7 @@ class ReactiveController(Node):
             self._publish_stop()
             return
 
-        # --- Priority 2: bumper hit – halt ---
-        if self.bump_detected:
-            self.is_turning  = False
-            self.is_avoiding = False
-            self.is_escaping = False
-            self.get_logger().info("Bumper hit – halting")
-            self._publish_stop()
-            return
-
-        # --- Priority 2: human teleop ---
+        # Priority 2: human teleop
         if self._teleop_active():
             self.is_turning  = False
             self.is_avoiding = False
@@ -228,13 +217,13 @@ class ReactiveController(Node):
             self.is_turning = False
             asymmetry = abs(self.left_distance - self.right_distance)
             if asymmetry <= self.SYMMETRY_THRESHOLD:
-                # --- Priority 3: escape symmetric obstacle ---
+                # Priority 3: escape symmetric obstacle
                 self._start_escape()
             else:
-                # --- Priority 4: avoid asymmetric obstacle ---
+                # Priority 4: avoid asymmetric obstacle
                 self._start_avoidance()
 
-        # --- Priority 3 continued: execute escape ---
+        # Priority 3 continued: execute escape
         if self.is_escaping:
             if self.escape_phase == 'backing':
                 if now_sec < self.escape_phase_end_time:
@@ -255,7 +244,7 @@ class ReactiveController(Node):
                     self._publish_forward()
             return
 
-        # --- Priority 4 continued: execute avoidance turn ---
+        # Priority 4 continued: execute avoidance turn
         if self.is_avoiding:
             if now_sec < self.avoid_end_time:
                 self._publish_turn(self.avoid_turn_direction)
@@ -266,7 +255,7 @@ class ReactiveController(Node):
                 self._publish_forward()
             return
 
-        # --- Priority 5: random turn every 1 ft ---
+        # Priority 5: random turn every 1 ft
         if self.is_turning:
             if now_sec < self.turn_end_time:
                 self._publish_turn(self.current_turn_direction)
@@ -277,7 +266,7 @@ class ReactiveController(Node):
                 self._publish_forward()
             return
 
-        # --- Priority 6: drive forward ---
+        # Priority 6: drive forward
         self.forward_distance_accum += self.slow_speed * self.timer_period
         if self.forward_distance_accum >= ONE_FOOT_M:
             self._start_random_turn()
