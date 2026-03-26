@@ -53,7 +53,7 @@ class ReactiveController(Node):
         self.SYMMETRY_THRESHOLD = 0.3  # meters – diff below this → symmetric
 
         # Behavior 5: random ±15° turn every 1 ft
-        self.MAX_TURN_DEG           = 0
+        self.MAX_TURN_DEG           = 15
         self.forward_distance_accum = 0.0
 
         # Behavior 5 – random turn state

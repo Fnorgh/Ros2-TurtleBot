@@ -8,6 +8,11 @@
     cmd="bash -lc 'echo ERROR: robot_name argument is required. Example: ros2 launch reactive_robot project2.launch.xml robot_name:=hawksbill; exit 1'"
     output="screen" />
 
+  <!-- Kill the system joystick node so it doesn't fight /cmd_vel -->
+  <executable
+    cmd="bash -lc 'pkill -f teleop_twist_joy 2>/dev/null; true'"
+    output="screen" />
+
   <!-- Reactive controller -->
   <executable
     cmd="bash -lc 'printf &quot;%s\n&quot; &quot;$(var robot_name)&quot; | robot-setup.sh &amp;&amp; ros2 run reactive_robot reactive_controller'"
