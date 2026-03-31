@@ -60,8 +60,6 @@ class ReactiveController(Node):
         self.current_turn_direction = 0.0
 
         # Behavior 4
-        self.is_avoiding          = False
-        self.avoid_end_time       = None
         self.avoid_turn_direction = 0.0
 
         # Behavior 3
@@ -69,6 +67,9 @@ class ReactiveController(Node):
         self.escape_phase          = None
         self.escape_phase_end_time = None
         self.escape_turn_direction = 0.0
+        self.escape_turn_angle_deg = 180.0
+
+        self.shutdown_requested = False
 
     #
     # Sensor callbacks
@@ -129,22 +130,20 @@ class ReactiveController(Node):
     #
 
     def _start_escape(self):
-        """Behavior 3: back up 1 s then spin 90 deg (symmetric obstacle)."""
+        """Behavior 3: back up 1 s then spin about 180 deg (+/- 30 deg)."""
         self.is_escaping           = True
         self.escape_phase          = 'backing'
         self.escape_phase_end_time = self.get_clock().now().nanoseconds * 1e-9 + 1.0
         self.escape_turn_direction = 1.0 if random.random() > 0.5 else -1.0
+        self.escape_turn_angle_deg = random.uniform(150.0, 210.0)
         self.get_logger().info("Symmetric obstacle – escaping: backing up")
 
     def _start_avoidance(self):
-        """Behavior 4: turn 15 deg toward the open side, then re-check."""
+        """Behavior 4: make one reactive steering step toward the open side."""
         self.avoid_turn_direction = 1.0 if self.left_distance >= self.right_distance else -1.0
-        turn_duration             = math.radians(15.0) / self.turn_speed
-        self.is_avoiding          = True
-        self.avoid_end_time       = self.get_clock().now().nanoseconds * 1e-9 + turn_duration
         self.get_logger().info(
             f"Asymmetric obstacle (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – "
-            f"turning {'left' if self.avoid_turn_direction > 0 else 'right'} 15 deg"
+            f"steering {'left' if self.avoid_turn_direction > 0 else 'right'} this cycle"
         )
 
     def _start_random_turn(self):
@@ -183,6 +182,17 @@ class ReactiveController(Node):
         cmd.twist.angular.z = direction * self.turn_speed
         self.cmd_pub.publish(cmd)
 
+    def _halt_and_shutdown(self):
+        if self.shutdown_requested:
+            return
+
+        self.shutdown_requested = True
+        self.is_turning = False
+        self.is_escaping = False
+        self.teleop_cmd = None
+        self._publish_stop()
+        rclpy.shutdown()
+
     #
     # Main control loop
     #
@@ -196,24 +206,20 @@ class ReactiveController(Node):
 
         # Priority 1: obstacle too close
         if self.front_distance < 0.3 or self.bump_detected:
-            self.is_turning  = False
-            self.is_avoiding = False
-            self.is_escaping = False
             self.get_logger().info(f"Too close ({self.front_distance:.2f} m) – full halt")
-            self._publish_stop()
+            self._halt_and_shutdown()
             return
 
         # Priority 2: human teleop
         if self._teleop_active():
             self.is_turning  = False
-            self.is_avoiding = False
             self.is_escaping = False
             self.get_logger().info("Teleop active – forwarding human input")
             self.cmd_pub.publish(self.teleop_cmd)
             return
 
         # If a new obstacle appears and we are not already maneuvering, decide what to do
-        if self.front_distance < self.OBSTACLE_DIST and not self.is_escaping and not self.is_avoiding:
+        if self.front_distance < self.OBSTACLE_DIST and not self.is_escaping:
             self.is_turning = False
             asymmetry = abs(self.left_distance - self.right_distance)
             if asymmetry <= self.SYMMETRY_THRESHOLD:
@@ -222,6 +228,8 @@ class ReactiveController(Node):
             else:
                 # Priority 4: avoid asymmetric obstacle
                 self._start_avoidance()
+                self._publish_turn(self.avoid_turn_direction)
+                return
 
         # Priority 3 continued: execute escape
         if self.is_escaping:
@@ -230,7 +238,7 @@ class ReactiveController(Node):
                     self._publish_backup()
                 else:
                     self.escape_phase          = 'turning'
-                    self.escape_phase_end_time = now_sec + math.radians(90.0) / self.turn_speed
+                    self.escape_phase_end_time = now_sec + math.radians(self.escape_turn_angle_deg) / self.turn_speed
                     self.get_logger().info("Escape: backup done – spinning 90 deg")
                     self._publish_turn(self.escape_turn_direction)
             else:  # 'turning'
@@ -241,28 +249,6 @@ class ReactiveController(Node):
                     self.escape_phase           = None
                     self.forward_distance_accum = 0.0
                     self.get_logger().info("Escape complete – resuming forward drive")
-                    self._publish_forward()
-            return
-
-        # Priority 4 continued: execute avoidance turn
-        if self.is_avoiding:
-            if now_sec < self.avoid_end_time:
-                self._publish_turn(self.avoid_turn_direction)
-            else:
-                self.is_avoiding = False
-                if self.front_distance < self.OBSTACLE_DIST:
-                    asymmetry = abs(self.left_distance - self.right_distance)
-                    if asymmetry <= self.SYMMETRY_THRESHOLD:
-                        self.get_logger().info("Obstacle still ahead after 15 deg – escalating to escape")
-                        self._start_escape()
-                        self._publish_backup()
-                    else:
-                        self.get_logger().info("Obstacle still ahead after 15 deg – taking another step")
-                        self._start_avoidance()
-                        self._publish_turn(self.avoid_turn_direction)
-                else:
-                    self.forward_distance_accum = 0.0
-                    self.get_logger().info("Avoidance complete – resuming forward drive")
                     self._publish_forward()
             return
 
@@ -289,9 +275,12 @@ class ReactiveController(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ReactiveController()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
