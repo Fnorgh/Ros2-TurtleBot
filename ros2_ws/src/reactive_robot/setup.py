@@ -12,7 +12,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', [
             'launch/reactive_robot.launch.py',
-            'launch/project2.launch.xml',
+            'launch/reactive_robot.launch.xml',
         ]),
     ],
     install_requires=['setuptools'],
