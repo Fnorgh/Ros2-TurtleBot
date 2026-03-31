@@ -2,12 +2,6 @@
   <!-- Robot name passed in on the command line -->
   <arg name="robot_name" default="" description="TurtleBot name printed on the robot" />
 
-  <!-- Warn if robot_name was left empty -->
-  <executable
-    if="$(eval '$(var robot_name)'=='')"
-    cmd="bash -lc 'echo ERROR: robot_name argument is required. Example: ros2 launch reactive_robot reactive_robot.launch.xml robot_name:=hawksbill; exit 1'"
-    output="screen" />
-
   <!-- Kill the system joystick node so it doesn't fight /cmd_vel -->
   <executable
     cmd="bash -lc 'pkill -f teleop_twist_joy 2>/dev/null; true'"
