@@ -4,8 +4,8 @@
 
   <!-- Warn if robot_name was left empty -->
   <executable
-    if="$(eval '\'$(var robot_name)\'' == '\'\'')"
-    cmd="bash -lc 'echo ERROR: robot_name argument is required. Example: ros2 launch reactive_robot project2.launch.xml robot_name:=hawksbill; exit 1'"
+    if="$(eval '$(var robot_name)' == '')"
+    cmd="bash -lc 'echo ERROR: robot_name argument is required. Example: ros2 launch reactive_robot reactive_robot.launch.xml robot_name:=hawksbill; exit 1'"
     output="screen" />
 
   <!-- Kill the system joystick node so it doesn't fight /cmd_vel -->
