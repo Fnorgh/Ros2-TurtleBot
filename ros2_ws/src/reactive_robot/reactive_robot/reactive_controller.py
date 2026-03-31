@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import TwistStamped
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from irobot_create_msgs.msg import HazardDetectionVector, HazardDetection
 import math
@@ -26,6 +27,9 @@ class ReactiveController(Node):
         self.hazard_sub = self.create_subscription(
             HazardDetectionVector, '/hazard_detection', self.hazard_callback, 10)
 
+        self.odom_sub = self.create_subscription(
+            Odometry, '/odom', self.odom_callback, 10)
+
         self.timer_period = 0.05
         self.timer = self.create_timer(self.timer_period, self.control_loop)
 
@@ -34,6 +38,9 @@ class ReactiveController(Node):
         self.left_distance  = float('inf')
         self.right_distance = float('inf')
         self.bump_detected  = False
+        self.last_odom_x    = None
+        self.last_odom_y    = None
+        self.track_distance = False
 
         # Speeds
         self.slow_speed   =  0.1   # m/s forward
@@ -115,6 +122,18 @@ class ReactiveController(Node):
             h.type == HazardDetection.BUMP for h in msg.detections
         )
 
+    def odom_callback(self, msg):
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+
+        if self.last_odom_x is not None and self.last_odom_y is not None and self.track_distance:
+            dx = x - self.last_odom_x
+            dy = y - self.last_odom_y
+            self.forward_distance_accum += math.hypot(dx, dy)
+
+        self.last_odom_x = x
+        self.last_odom_y = y
+
     def teleop_callback(self, msg):
         self.teleop_cmd       = msg
         self.last_teleop_time = self.get_clock().now()
@@ -165,19 +184,23 @@ class ReactiveController(Node):
     #
 
     def _publish_stop(self):
+        self.track_distance = False
         self.cmd_pub.publish(TwistStamped())
 
     def _publish_forward(self):
+        self.track_distance = True
         cmd = TwistStamped()
         cmd.twist.linear.x = self.slow_speed
         self.cmd_pub.publish(cmd)
 
     def _publish_backup(self):
+        self.track_distance = False
         cmd = TwistStamped()
         cmd.twist.linear.x = self.backup_speed
         self.cmd_pub.publish(cmd)
 
     def _publish_turn(self, direction):
+        self.track_distance = False
         cmd = TwistStamped()
         cmd.twist.angular.z = direction * self.turn_speed
         self.cmd_pub.publish(cmd)
@@ -214,6 +237,7 @@ class ReactiveController(Node):
         if self._teleop_active():
             self.is_turning  = False
             self.is_escaping = False
+            self.track_distance = False
             self.get_logger().info("Teleop active – forwarding human input")
             self.cmd_pub.publish(self.teleop_cmd)
             return
@@ -264,7 +288,6 @@ class ReactiveController(Node):
             return
 
         # Priority 6: drive forward
-        self.forward_distance_accum += self.slow_speed * self.timer_period
         if self.forward_distance_accum >= ONE_FOOT_M:
             self._start_random_turn()
             self._publish_turn(self.current_turn_direction)
