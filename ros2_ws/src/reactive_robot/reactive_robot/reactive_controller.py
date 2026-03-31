@@ -137,14 +137,14 @@ class ReactiveController(Node):
         self.get_logger().info("Symmetric obstacle – escaping: backing up")
 
     def _start_avoidance(self):
-        """Behavior 4: turn 90 deg toward the open side (asymmetric obstacle)."""
+        """Behavior 4: turn 15 deg toward the open side, then re-check."""
         self.avoid_turn_direction = 1.0 if self.left_distance >= self.right_distance else -1.0
-        turn_duration             = math.radians(45.0) / self.turn_speed
+        turn_duration             = math.radians(15.0) / self.turn_speed
         self.is_avoiding          = True
         self.avoid_end_time       = self.get_clock().now().nanoseconds * 1e-9 + turn_duration
         self.get_logger().info(
             f"Asymmetric obstacle (L:{self.left_distance:.2f} R:{self.right_distance:.2f}) – "
-            f"turning {'left' if self.avoid_turn_direction > 0 else 'right'} 45 deg"
+            f"turning {'left' if self.avoid_turn_direction > 0 else 'right'} 15 deg"
         )
 
     def _start_random_turn(self):
@@ -249,10 +249,21 @@ class ReactiveController(Node):
             if now_sec < self.avoid_end_time:
                 self._publish_turn(self.avoid_turn_direction)
             else:
-                self.is_avoiding            = False
-                self.forward_distance_accum = 0.0
-                self.get_logger().info("Avoidance complete – resuming forward drive")
-                self._publish_forward()
+                self.is_avoiding = False
+                if self.front_distance < self.OBSTACLE_DIST:
+                    asymmetry = abs(self.left_distance - self.right_distance)
+                    if asymmetry <= self.SYMMETRY_THRESHOLD:
+                        self.get_logger().info("Obstacle still ahead after 15 deg – escalating to escape")
+                        self._start_escape()
+                        self._publish_backup()
+                    else:
+                        self.get_logger().info("Obstacle still ahead after 15 deg – taking another step")
+                        self._start_avoidance()
+                        self._publish_turn(self.avoid_turn_direction)
+                else:
+                    self.forward_distance_accum = 0.0
+                    self.get_logger().info("Avoidance complete – resuming forward drive")
+                    self._publish_forward()
             return
 
         # Priority 5: random turn every 1 ft
