@@ -6,7 +6,7 @@ from irobot_create_msgs.msg import HazardDetectionVector, HazardDetection
 import math
 import random
 
-TELEOP_TIMEOUT  = 5.0
+TELEOP_TIMEOUT  = 0.25
 ONE_FOOT_M      = 0.3048  # 1 ft
 
 
